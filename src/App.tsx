@@ -8,7 +8,9 @@ import LearnPage from "./pages/LearnPage.tsx";
 import AIToolsPage from "./pages/AIToolsPage.tsx";
 import AnalyticsPage from "./pages/AnalyticsPage.tsx";
 import HistoryPage from "./pages/HistoryPage.tsx";
+import AuthPage from "./pages/AuthPage.tsx";
 import NotFound from "./pages/NotFound.tsx";
+import { ProtectedRoute } from "./components/ProtectedRoute";
 
 const queryClient = new QueryClient();
 
@@ -19,12 +21,13 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<Index />} />
-          <Route path="/learn" element={<LearnPage />} />
-          <Route path="/ai-tools" element={<AIToolsPage />} />
-          <Route path="/analytics" element={<AnalyticsPage />} />
-          <Route path="/history" element={<HistoryPage />} />
-          <Route path="*" element={<NotFound />} />
+          <Route path="/auth" element={<AuthPage />} />
+          <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+          <Route path="/learn" element={<ProtectedRoute><LearnPage /></ProtectedRoute>} />
+          <Route path="/ai-tools" element={<ProtectedRoute><AIToolsPage /></ProtectedRoute>} />
+          <Route path="/analytics" element={<ProtectedRoute><AnalyticsPage /></ProtectedRoute>} />
+          <Route path="/history" element={<ProtectedRoute><HistoryPage /></ProtectedRoute>} />
+          <Route path="*" element={<ProtectedRoute><NotFound /></ProtectedRoute>} />
         </Routes>
       </BrowserRouter>
     </TooltipProvider>
