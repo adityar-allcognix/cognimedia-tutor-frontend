@@ -422,7 +422,7 @@ export default function AIToolsPage() {
                 </div>
                 <div>
                   <p className="font-semibold text-foreground">AI is generating...</p>
-                  <p className="text-xs text-muted-foreground mt-1 italic">"Good things take time (and tokens)"</p>
+                  <p className="text-xs text-muted-foreground mt-1 italic">"Good things take time"</p>
                 </div>
               </div>
             ) : !result ? (

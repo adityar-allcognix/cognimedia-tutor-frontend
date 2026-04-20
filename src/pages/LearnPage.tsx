@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -22,6 +22,15 @@ import {
   Sigma,
   ImageIcon,
   XCircle,
+  FileText,
+  Eye,
+  FlaskConical,
+  Globe,
+  Zap,
+  ChevronDown,
+  Youtube,
+  PlayCircle,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppLayout } from "@/components/AppLayout";
@@ -45,6 +54,30 @@ function stripMathDelimiters(f: string): string {
     .trim();
 }
 
+function parseExplanationSections(raw: string): { title: string; content: string }[] {
+  const text = preprocessLatex(raw.trim().replace(/^\s*\(\s*/, '').replace(/\s*\)\s*$/, ''));
+  const parts = text.split(/\n(?=## )/);
+  const sections: { title: string; content: string }[] = [];
+  for (const part of parts) {
+    const match = part.match(/^## (.+?)\n([\s\S]*)/);
+    if (match) {
+      sections.push({ title: match[1].trim(), content: match[2].trim() });
+    } else if (part.trim()) {
+      sections.push({ title: '', content: part.trim() });
+    }
+  }
+  return sections;
+}
+
+const SECTION_STYLES = [
+  { icon: BookOpen,      accent: "text-blue-600 dark:text-blue-400",   bg: "bg-blue-50 dark:bg-blue-950/20",   border: "border-blue-200 dark:border-blue-800",   iconBg: "bg-blue-100 dark:bg-blue-900/50" },
+  { icon: ListChecks,    accent: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-50 dark:bg-indigo-950/20", border: "border-indigo-200 dark:border-indigo-800", iconBg: "bg-indigo-100 dark:bg-indigo-900/50" },
+  { icon: FlaskConical,  accent: "text-amber-600 dark:text-amber-400",  bg: "bg-amber-50 dark:bg-amber-950/20",  border: "border-amber-200 dark:border-amber-800",  iconBg: "bg-amber-100 dark:bg-amber-900/50" },
+  { icon: Globe,         accent: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-50 dark:bg-emerald-950/20", border: "border-emerald-200 dark:border-emerald-800", iconBg: "bg-emerald-100 dark:bg-emerald-900/50" },
+  { icon: AlertCircle,   accent: "text-rose-600 dark:text-rose-400",    bg: "bg-rose-50 dark:bg-rose-950/20",    border: "border-rose-200 dark:border-rose-800",    iconBg: "bg-rose-100 dark:bg-rose-900/50" },
+  { icon: Zap,           accent: "text-violet-600 dark:text-violet-400", bg: "bg-violet-50 dark:bg-violet-950/20", border: "border-violet-200 dark:border-violet-800", iconBg: "bg-violet-100 dark:bg-violet-900/50" },
+];
+
 const KATEX_OPTIONS = { throwOnError: false, errorColor: '#cc0000' };
 const MD_PLUGINS = {
   remark: [remarkGfm, remarkMath],
@@ -59,6 +92,8 @@ const tabs = [
   { id: "explanation", label: "Explanation", icon: BookOpen },
   { id: "keypoints",   label: "Key Points",  icon: ListChecks },
   { id: "examples",    label: "Examples",    icon: Lightbulb },
+  { id: "boardqs",     label: "Board Qs",    icon: FileText },
+  { id: "resources",   label: "Resources",   icon: Youtube },
   { id: "quiz",        label: "Quiz",        icon: HelpCircle },
 ];
 
@@ -86,6 +121,83 @@ async function fetchWikiImages(query: string): Promise<{ title: string; thumb: s
     }));
 }
 
+function ExplanationSection({
+  section,
+  style,
+  Icon,
+  defaultOpen,
+}: {
+  section: { title: string; content: string };
+  style: typeof SECTION_STYLES[0];
+  Icon: React.ElementType;
+  defaultOpen: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className={cn("rounded-2xl border overflow-hidden", style.border)}>
+      {section.title ? (
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className={cn(
+            "w-full flex items-center gap-3 px-5 py-3.5 text-left transition-colors",
+            style.bg
+          )}
+        >
+          <div className={cn("p-1.5 rounded-lg shrink-0", style.iconBg)}>
+            <Icon className={cn("w-3.5 h-3.5", style.accent)} />
+          </div>
+          <span className={cn("flex-1 text-sm font-bold", style.accent)}>{section.title}</span>
+          <ChevronDown className={cn("w-4 h-4 shrink-0 transition-transform duration-200", style.accent, open && "rotate-180")} />
+        </button>
+      ) : null}
+      {open && (
+        <div className="px-5 py-4 bg-card prose prose-sm md:prose-base max-w-none text-foreground/85 leading-relaxed
+          prose-headings:text-foreground prose-headings:font-bold prose-headings:mt-4 prose-headings:mb-2
+          prose-h3:text-sm prose-h3:font-bold
+          prose-strong:text-foreground prose-strong:font-semibold
+          prose-p:mb-3 prose-p:leading-7
+          prose-ul:my-2 prose-li:my-0.5
+          prose-code:bg-muted prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-sm prose-code:font-mono
+          prose-blockquote:border-primary/40 prose-blockquote:bg-primary/5 prose-blockquote:rounded-r-xl prose-blockquote:not-italic
+          prose-table:text-sm
+        ">
+          <ReactMarkdown remarkPlugins={MD_PLUGINS.remark} rehypePlugins={MD_PLUGINS.rehype}>
+            {section.content}
+          </ReactMarkdown>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const YT_API_KEY = import.meta.env.VITE_YOUTUBE_API_KEY as string | undefined;
+
+async function fetchYouTubeVideos(topic: string, grade: number): Promise<{ videoId: string; title: string; channel: string; thumb: string }[]> {
+  if (!YT_API_KEY || YT_API_KEY === "your_youtube_data_api_v3_key_here") return [];
+  const query = `CBSE class ${grade} ${topic}`;
+  const url = new URL("https://www.googleapis.com/youtube/v3/search");
+  url.searchParams.set("part", "snippet");
+  url.searchParams.set("q", query);
+  url.searchParams.set("type", "video");
+  url.searchParams.set("videoDuration", "medium"); // 4–20 min, excludes Shorts (<60s)
+  url.searchParams.set("maxResults", "8");
+  url.searchParams.set("relevanceLanguage", "en");
+  url.searchParams.set("key", YT_API_KEY);
+  const res = await fetch(url.toString());
+  if (!res.ok) return [];
+  const data = await res.json();
+  const SHORTS_RE = /#shorts?\b/i;
+  return (data.items ?? [])
+    .filter((item: any) => !SHORTS_RE.test(item.snippet.title))
+    .slice(0, 6)
+    .map((item: any) => ({
+    videoId: item.id.videoId,
+    title: item.snippet.title,
+    channel: item.snippet.channelTitle,
+    thumb: item.snippet.thumbnails?.medium?.url ?? `https://img.youtube.com/vi/${item.id.videoId}/mqdefault.jpg`,
+  }));
+}
+
 export default function LearnPage() {
   const [chapters, setChapters] = useState<any[]>([]);
   const [subjects, setSubjects] = useState<string[]>([]);
@@ -99,12 +211,16 @@ export default function LearnPage() {
 
   const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number>>({});
   const [submitted, setSubmitted] = useState(false);
+  const [revealedAnswers, setRevealedAnswers] = useState<Set<number>>(new Set());
   const [lessonContent, setLessonContent] = useState<any>(null);
   const [fetchingLesson, setFetchingLesson] = useState(false);
   const [lessonError, setLessonError] = useState<string | null>(null);
 
   const [images, setImages] = useState<{ title: string; thumb: string; page: string }[]>([]);
   const [loadingImages, setLoadingImages] = useState(false);
+  const [videos, setVideos] = useState<{ videoId: string; title: string; channel: string; thumb: string }[]>([]);
+  const [loadingVideos, setLoadingVideos] = useState(false);
+  const [videosFetched, setVideosFetched] = useState(false);
 
   const user = getUser() as any;
   const userId = getCurrentUserId() || "test-user";
@@ -162,6 +278,9 @@ export default function LearnPage() {
           setLessonError(null);
           setSubmitted(false);
           setSelectedAnswers({});
+          setRevealedAnswers(new Set());
+          setVideos([]);
+          setVideosFetched(false);
           setImages([]);
           setLoadingImages(true);
           fetchWikiImages(topicStr)
@@ -196,6 +315,16 @@ export default function LearnPage() {
   const currentChapter = chapters[activeChapterIndex];
   const currentTopic = currentChapter?.topics[activeTopicIndex];
   const topicName = typeof currentTopic === 'string' ? currentTopic : currentTopic?.name;
+
+  // Lazy-load YouTube videos only when Resources tab is opened
+  useEffect(() => {
+    if (activeTab !== "resources" || videosFetched || !topicName) return;
+    setLoadingVideos(true);
+    fetchYouTubeVideos(topicName, grade)
+      .then(setVideos)
+      .catch(() => setVideos([]))
+      .finally(() => { setLoadingVideos(false); setVideosFetched(true); });
+  }, [activeTab, videosFetched, topicName, grade]);
 
   const quizQuestions = lessonContent?.diagnostic_quiz ?? [];
   const answeredCount = Object.keys(selectedAnswers).length;
@@ -386,6 +515,11 @@ export default function LearnPage() {
                         {quizQuestions.length}
                       </span>
                     )}
+                    {tab.id === "boardqs" && lessonContent?.theoretical_questions?.length > 0 && (
+                      <span className="ml-1 text-[10px] font-bold bg-muted px-1.5 py-0.5 rounded-full text-muted-foreground">
+                        {lessonContent.theoretical_questions.length}
+                      </span>
+                    )}
                   </button>
                 ))}
               </div>
@@ -396,22 +530,15 @@ export default function LearnPage() {
                 {/* ── EXPLANATION ── */}
                 {activeTab === "explanation" && (
                   <div className="space-y-8">
-                    {/* Prose */}
-                    <div className="prose prose-sm md:prose-base max-w-none text-foreground/85 leading-relaxed
-                      prose-headings:text-foreground prose-headings:font-bold prose-headings:mt-6 prose-headings:mb-3
-                      prose-h2:text-xl prose-h3:text-base
-                      prose-strong:text-foreground prose-strong:font-semibold
-                      prose-p:mb-4 prose-p:leading-7
-                      prose-ul:my-3 prose-li:my-1
-                      prose-code:bg-muted prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-sm prose-code:font-mono
-                      prose-blockquote:border-primary/40 prose-blockquote:bg-primary/5 prose-blockquote:rounded-r-xl prose-blockquote:not-italic
-                    ">
-                      <ReactMarkdown
-                        remarkPlugins={MD_PLUGINS.remark}
-                        rehypePlugins={MD_PLUGINS.rehype}
-                      >
-                        {preprocessLatex(lessonContent.explanation.trim().replace(/^\s*\(\s*/, '').replace(/\s*\)\s*$/, ''))}
-                      </ReactMarkdown>
+                    {/* Sectioned cards */}
+                    <div className="space-y-3">
+                      {parseExplanationSections(lessonContent.explanation).map((section, si) => {
+                        const style = SECTION_STYLES[si % SECTION_STYLES.length];
+                        const Icon = style.icon;
+                        return (
+                          <ExplanationSection key={si} section={section} style={style} Icon={Icon} defaultOpen={si === 0} />
+                        );
+                      })}
                     </div>
 
                     {/* Key Formulas */}
@@ -560,6 +687,177 @@ export default function LearnPage() {
                         </div>
                       </div>
                     ))}
+                  </div>
+                )}
+
+                {/* ── BOARD QUESTIONS ── */}
+                {activeTab === "boardqs" && (
+                  <div className="space-y-5">
+                    {(!lessonContent.theoretical_questions || lessonContent.theoretical_questions.length === 0) ? (
+                      <div className="flex flex-col items-center justify-center py-16 gap-3 opacity-50">
+                        <FileText className="w-10 h-10 text-muted-foreground" />
+                        <p className="text-sm font-semibold text-muted-foreground">Board questions not available for this topic yet.</p>
+                        <p className="text-xs text-muted-foreground">Reload the topic to generate them.</p>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="text-xs text-muted-foreground mb-2">
+                          Board-style questions for <span className="font-semibold text-foreground">{lessonContent.topic}</span>. Read the question, attempt it yourself, then reveal the model answer.
+                        </p>
+                        {lessonContent.theoretical_questions.map((q: any, qi: number) => {
+                          const isRevealed = revealedAnswers.has(qi);
+                          const is5Mark = q.marks === 5;
+                          return (
+                            <div key={qi} className="rounded-2xl border border-border/60 bg-card overflow-hidden shadow-sm">
+                              {/* Header */}
+                              <div className="flex items-center gap-3 px-5 py-4 border-b border-border/40">
+                                <span className="w-6 h-6 rounded-lg bg-primary/10 text-primary flex items-center justify-center text-xs font-black shrink-0">
+                                  {qi + 1}
+                                </span>
+                                <div className="flex-1 text-sm font-semibold text-foreground leading-relaxed">
+                                  {q.question}
+                                </div>
+                                <span className={cn(
+                                  "shrink-0 text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full",
+                                  is5Mark
+                                    ? "bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300"
+                                    : "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300"
+                                )}>
+                                  {q.marks} Marks
+                                </span>
+                              </div>
+
+                              {/* Answer area */}
+                              <div className="px-5 py-4">
+                                {isRevealed ? (
+                                  <div className="space-y-2">
+                                    <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                                      <CheckCircle2 className="w-3 h-3" /> Model Answer
+                                    </p>
+                                    <div className="text-sm text-foreground/85 leading-relaxed prose prose-sm max-w-none
+                                      prose-strong:text-foreground prose-p:my-1 prose-ul:my-2 prose-li:my-0.5">
+                                      <ReactMarkdown
+                                        remarkPlugins={MD_PLUGINS.remark}
+                                        rehypePlugins={MD_PLUGINS.rehype}
+                                      >
+                                        {preprocessLatex(q.answer)}
+                                      </ReactMarkdown>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() => setRevealedAnswers((prev) => new Set([...prev, qi]))}
+                                    className="flex items-center gap-2 text-sm font-semibold text-primary hover:text-primary/80 transition-colors"
+                                  >
+                                    <Eye className="w-4 h-4" />
+                                    Reveal Answer
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {/* ── RESOURCES ── */}
+                {activeTab === "resources" && (
+                  <div className="space-y-5">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                          <Youtube className="w-3.5 h-3.5 text-red-500" /> YouTube Videos
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Curated for <span className="font-semibold text-foreground">{topicName}</span> · Class {grade} CBSE
+                        </p>
+                      </div>
+                      <a
+                        href={`https://www.youtube.com/results?search_query=CBSE+class+${grade}+${encodeURIComponent(topicName ?? '')}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 text-xs font-semibold text-primary hover:text-primary/80 transition-colors"
+                      >
+                        Search more <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </div>
+
+                    {!YT_API_KEY || YT_API_KEY === "your_youtube_data_api_v3_key_here" ? (
+                      <div className="rounded-2xl border border-dashed border-border/60 p-8 flex flex-col items-center gap-3 text-center">
+                        <Youtube className="w-10 h-10 text-red-400 opacity-60" />
+                        <p className="text-sm font-semibold text-foreground">YouTube API key not configured</p>
+                        <p className="text-xs text-muted-foreground max-w-xs">
+                          Add <code className="bg-muted px-1 py-0.5 rounded text-[11px]">VITE_YOUTUBE_API_KEY</code> to your <code className="bg-muted px-1 py-0.5 rounded text-[11px]">.env</code> file to enable video recommendations.
+                        </p>
+                        <a
+                          href={`https://www.youtube.com/results?search_query=CBSE+class+${grade}+${encodeURIComponent(topicName ?? '')}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-1 flex items-center gap-2 px-4 py-2 rounded-xl bg-red-500 text-white text-sm font-semibold hover:bg-red-600 transition-colors"
+                        >
+                          <Youtube className="w-4 h-4" /> Search on YouTube
+                        </a>
+                      </div>
+                    ) : loadingVideos ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {Array.from({ length: 4 }).map((_, i) => (
+                          <div key={i} className="rounded-2xl border border-border/40 overflow-hidden animate-pulse">
+                            <div className="w-full aspect-video bg-muted" />
+                            <div className="p-3 space-y-2">
+                              <div className="h-3 bg-muted rounded w-3/4" />
+                              <div className="h-2.5 bg-muted rounded w-1/2" />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : videos.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-border/60 p-8 flex flex-col items-center gap-3 text-center">
+                        <Youtube className="w-10 h-10 text-muted-foreground opacity-40" />
+                        <p className="text-sm font-semibold text-muted-foreground">No videos found</p>
+                        <a
+                          href={`https://www.youtube.com/results?search_query=CBSE+class+${grade}+${encodeURIComponent(topicName ?? '')}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-primary font-semibold hover:underline flex items-center gap-1"
+                        >
+                          Try searching on YouTube <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {videos.map((v) => (
+                          <a
+                            key={v.videoId}
+                            href={`https://www.youtube.com/watch?v=${v.videoId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="group rounded-2xl border border-border/60 overflow-hidden hover:border-red-400/60 hover:shadow-md transition-all bg-card"
+                          >
+                            <div className="relative w-full aspect-video bg-muted overflow-hidden">
+                              <img
+                                src={v.thumb}
+                                alt={v.title}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                              />
+                              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/30">
+                                <PlayCircle className="w-12 h-12 text-white drop-shadow-lg" />
+                              </div>
+                              <div className="absolute top-2 right-2 bg-red-600 rounded-md px-1.5 py-0.5">
+                                <Youtube className="w-3 h-3 text-white" />
+                              </div>
+                            </div>
+                            <div className="px-3.5 py-3">
+                              <p className="text-xs font-semibold text-foreground leading-snug line-clamp-2 group-hover:text-red-600 dark:group-hover:text-red-400 transition-colors">
+                                {v.title}
+                              </p>
+                              <p className="text-[10px] text-muted-foreground mt-1 truncate">{v.channel}</p>
+                            </div>
+                          </a>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 
