@@ -20,6 +20,7 @@ export type AuthPayload = {
   email: string;
   password: string;
   full_name?: string;
+  grade?: number;
 };
 
 export const signup = async (payload: AuthPayload) => {
@@ -66,7 +67,7 @@ export const getAvailableSubjects = async (grade: number) => {
   return data;
 };
 
-export const learnChapterTopic = async (payload: { user_id: string; grade: number; subject: string; chapter_id: string; chapter_name?: string; topic?: string }) => {
+export const learnChapterTopic = async (payload: { user_id: string; grade: number; subject: string; chapter_id: string; chapter_name?: string; topic?: string; num_questions?: number }) => {
   const { data } = await api.post('/learning/chapter/learn', payload);
   return data;
 };

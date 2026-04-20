@@ -7,8 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Mail, Lock, User, ArrowRight, Sparkles } from "lucide-react";
+import { Loader2, Mail, Lock, User, ArrowRight, Sparkles, GraduationCap } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 
 export default function AuthPage() {
     const [isLoading, setIsLoading] = useState(false);
@@ -26,6 +27,7 @@ export default function AuthPage() {
     const [signupEmail, setSignupEmail] = useState("");
     const [signupPassword, setSignupPassword] = useState("");
     const [signupName, setSignupName] = useState("");
+    const [signupGrade, setSignupGrade] = useState<number | null>(null);
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -51,12 +53,17 @@ export default function AuthPage() {
 
     const handleSignup = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!signupGrade) {
+            toast({ variant: "destructive", title: "Class required", description: "Please select your class to continue." });
+            return;
+        }
         setIsLoading(true);
         try {
             const data = await signup({
                 email: signupEmail,
                 password: signupPassword,
-                full_name: signupName
+                full_name: signupName,
+                grade: signupGrade,
             });
             setAuthSession(data);
             toast({
@@ -160,7 +167,7 @@ export default function AuthPage() {
                                             <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                                             <Input
                                                 id="signup-name"
-                                                placeholder="John Doe"
+                                                placeholder="Full Name"
                                                 className="pl-10"
                                                 value={signupName}
                                                 onChange={(e) => setSignupName(e.target.value)}
@@ -196,6 +203,28 @@ export default function AuthPage() {
                                                 onChange={(e) => setSignupPassword(e.target.value)}
                                                 required
                                             />
+                                        </div>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label className="flex items-center gap-1.5">
+                                            <GraduationCap className="w-3.5 h-3.5" /> Your Class
+                                        </Label>
+                                        <div className="grid grid-cols-7 gap-1.5">
+                                            {[6, 7, 8, 9, 10, 11, 12].map((g) => (
+                                                <button
+                                                    key={g}
+                                                    type="button"
+                                                    onClick={() => setSignupGrade(g)}
+                                                    className={cn(
+                                                        "py-2 rounded-lg text-sm font-semibold border-2 transition-all",
+                                                        signupGrade === g
+                                                            ? "bg-primary text-primary-foreground border-primary"
+                                                            : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                                                    )}
+                                                >
+                                                    {g}
+                                                </button>
+                                            ))}
                                         </div>
                                     </div>
                                 </CardContent>

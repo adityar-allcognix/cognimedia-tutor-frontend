@@ -17,29 +17,51 @@ import {
   Book,
   GraduationCap,
   AlertCircle,
+  ChevronRight,
+  Clock,
+  Sigma,
+  ImageIcon,
+  XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppLayout } from "@/components/AppLayout";
 import { cn } from "@/lib/utils";
 
-// Converts \[...\] → $$...$$ and \(...\) → $...$ so remark-math can process them
+// Unescapes literal \n sequences from the backend, then converts LaTeX delimiters
 function preprocessLatex(text: string): string {
+  if (!text) return '';
   return text
-    .replace(/\\\[([\s\S]*?)\\\]/g, (_: string, m: string) => `$$${m}$$`)
+    .replace(/\\n/g, '\n')
+    .replace(/\\\[([\s\S]*?)\\\]/g, (_: string, m: string) => `\n$$${m}$$\n`)
     .replace(/\\\(([\s\S]*?)\\\)/g, (_: string, m: string) => `$${m}$`);
 }
 
+// Strips outer math delimiters — uses greedy match to avoid cutting formulas short
+function stripMathDelimiters(f: string): string {
+  const processed = preprocessLatex(f.trim());
+  return processed
+    .replace(/^\s*\$\$([\s\S]*)\$\$\s*$/, '$1')
+    .replace(/^\s*\$([\s\S]*)\$\s*$/, '$1')
+    .trim();
+}
+
 const KATEX_OPTIONS = { throwOnError: false, errorColor: '#cc0000' };
-const MD_PLUGINS = { remark: [remarkGfm, remarkMath], rehype: [[rehypeKatex, KATEX_OPTIONS]] as any };
+const MD_PLUGINS = {
+  remark: [remarkGfm, remarkMath],
+  rehype: [[rehypeKatex, KATEX_OPTIONS]] as any,
+};
+const MD_MATH_ONLY = {
+  remark: [remarkMath],
+  rehype: [[rehypeKatex, KATEX_OPTIONS]] as any,
+};
 
 const tabs = [
   { id: "explanation", label: "Explanation", icon: BookOpen },
-  { id: "keypoints", label: "Key Points", icon: ListChecks },
-  { id: "examples", label: "Examples", icon: Lightbulb },
-  { id: "quiz", label: "Quiz", icon: HelpCircle },
+  { id: "keypoints",   label: "Key Points",  icon: ListChecks },
+  { id: "examples",    label: "Examples",    icon: Lightbulb },
+  { id: "quiz",        label: "Quiz",        icon: HelpCircle },
 ];
 
-// Fetch Wikipedia images for a search query
 async function fetchWikiImages(query: string): Promise<{ title: string; thumb: string; page: string }[]> {
   const url = new URL("https://en.wikipedia.org/w/api.php");
   url.searchParams.set("action", "query");
@@ -52,7 +74,6 @@ async function fetchWikiImages(query: string): Promise<{ title: string; thumb: s
   url.searchParams.set("inprop", "url");
   url.searchParams.set("format", "json");
   url.searchParams.set("origin", "*");
-
   const res = await fetch(url.toString());
   const data = await res.json();
   const pages = Object.values(data?.query?.pages ?? {}) as any[];
@@ -82,7 +103,6 @@ export default function LearnPage() {
   const [fetchingLesson, setFetchingLesson] = useState(false);
   const [lessonError, setLessonError] = useState<string | null>(null);
 
-  // Related images state
   const [images, setImages] = useState<{ title: string; thumb: string; page: string }[]>([]);
   const [loadingImages, setLoadingImages] = useState(false);
 
@@ -90,7 +110,6 @@ export default function LearnPage() {
   const userId = getCurrentUserId() || "test-user";
   const grade = user?.grade || 10;
 
-  // 1. Fetch Subjects
   useEffect(() => {
     const fetchStats = async () => {
       try {
@@ -106,7 +125,6 @@ export default function LearnPage() {
     fetchStats();
   }, [grade]);
 
-  // 2. Fetch Syllabus
   useEffect(() => {
     const fetchSyllabusData = async () => {
       try {
@@ -114,7 +132,6 @@ export default function LearnPage() {
         setError(null);
         setChapters([]);
         setLessonContent(null);
-
         const data = await getSyllabus(grade, selectedSubject);
         if (data && Array.isArray(data)) {
           setChapters(data);
@@ -133,16 +150,13 @@ export default function LearnPage() {
     fetchSyllabusData();
   }, [grade, selectedSubject]);
 
-  // 3. Fetch Lesson content
   useEffect(() => {
     const fetchTopicContent = async () => {
       if (chapters.length > 0 && chapters[activeChapterIndex]) {
         const chapter = chapters[activeChapterIndex];
         const topic = chapter.topics[activeTopicIndex];
         if (!topic) return;
-
         const topicStr = typeof topic === 'string' ? topic : topic.name;
-
         try {
           setFetchingLesson(true);
           setLessonError(null);
@@ -150,8 +164,10 @@ export default function LearnPage() {
           setSelectedAnswers({});
           setImages([]);
           setLoadingImages(true);
-          fetchWikiImages(topicStr).then(setImages).catch(() => setImages([])).finally(() => setLoadingImages(false));
-
+          fetchWikiImages(topicStr)
+            .then(setImages)
+            .catch(() => setImages([]))
+            .finally(() => setLoadingImages(false));
           const data = await learnChapterTopic({
             user_id: userId,
             grade,
@@ -159,8 +175,8 @@ export default function LearnPage() {
             chapter_id: chapter.id,
             chapter_name: chapter.name,
             topic: topicStr,
+            num_questions: 10,
           });
-
           if (data) {
             setLessonContent(data);
           } else {
@@ -181,147 +197,215 @@ export default function LearnPage() {
   const currentTopic = currentChapter?.topics[activeTopicIndex];
   const topicName = typeof currentTopic === 'string' ? currentTopic : currentTopic?.name;
 
+  const quizQuestions = lessonContent?.diagnostic_quiz ?? [];
+  const answeredCount = Object.keys(selectedAnswers).length;
+  const correctCount = submitted
+    ? quizQuestions.filter((q: any, i: number) => q.options[selectedAnswers[i]] === q.correct_answer).length
+    : 0;
+
   return (
     <AppLayout>
       <div className="flex h-screen overflow-hidden">
-        {/* Left sidebar - chapters */}
-        <div className="hidden lg:flex flex-col w-80 border-r border-border/40 bg-card/30 backdrop-blur-sm overflow-y-auto p-5">
-          <div className="flex items-center gap-2 mb-6 p-3 bg-primary/5 rounded-2xl border border-primary/10">
-            <GraduationCap className="w-5 h-5 text-primary" />
-            <div className="flex flex-col">
-              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-none mb-1">Curriculum</span>
-              <span className="text-sm font-bold text-foreground">Class {grade} · {selectedSubject}</span>
+
+        {/* ── Sidebar ── */}
+        <div className="hidden lg:flex flex-col w-72 xl:w-80 border-r border-border/40 bg-card/50 overflow-y-auto shrink-0">
+          {/* Curriculum badge */}
+          <div className="sticky top-0 z-10 bg-card/80 backdrop-blur-sm border-b border-border/40 px-4 py-4">
+            <div className="flex items-center gap-2.5 mb-3">
+              <div className="p-1.5 rounded-lg bg-primary/10">
+                <GraduationCap className="w-4 h-4 text-primary" />
+              </div>
+              <div>
+                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Curriculum</p>
+                <p className="text-sm font-bold text-foreground">Class {grade} · {selectedSubject}</p>
+              </div>
+            </div>
+            {/* Subject pills */}
+            <div className="flex flex-wrap gap-1.5">
+              {subjects.map(sub => (
+                <button
+                  key={sub}
+                  onClick={() => setSelectedSubject(sub)}
+                  className={cn(
+                    "px-3 py-1 rounded-full text-xs font-semibold transition-all",
+                    selectedSubject === sub
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "bg-muted text-muted-foreground hover:bg-muted/80"
+                  )}
+                >
+                  {sub}
+                </button>
+              ))}
             </div>
           </div>
 
-          {/* Subject selector */}
-          <div className="grid grid-cols-2 gap-2 mb-6">
-            {subjects.map(sub => (
-              <button
-                key={sub}
-                onClick={() => setSelectedSubject(sub)}
-                className={cn(
-                  "px-3 py-2 rounded-xl text-xs font-bold transition-all truncate",
-                  selectedSubject === sub
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground hover:bg-muted/80"
-                )}
-              >
-                {sub}
-              </button>
-            ))}
-          </div>
-
-          <div className="space-y-4">
+          {/* Chapter list */}
+          <div className="px-3 py-4 space-y-1 flex-1">
             {loadingSyllabus ? (
-              <div className="flex flex-col items-center py-10 opacity-50">
-                <Loader2 className="w-6 h-6 animate-spin mb-2" />
-                <p className="text-xs font-medium">Crunching syllabus...</p>
+              <div className="flex flex-col items-center py-12 gap-2 opacity-50">
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <p className="text-xs font-medium">Loading syllabus...</p>
               </div>
             ) : error ? (
-              <div className="p-4 bg-danger-soft text-destructive text-xs rounded-xl flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
+              <div className="p-4 bg-destructive/5 text-destructive text-xs rounded-xl flex items-start gap-2 border border-destructive/20">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                 <p>{error}</p>
               </div>
-            ) : chapters.map((ch, ci) => (
-              <div key={ci} className="mb-2">
-                <button
-                  onClick={() => { setActiveChapterIndex(ci); setActiveTopicIndex(0); }}
-                  className={cn(
-                    "w-full text-left text-[13px] font-bold px-3 py-2.5 rounded-xl transition-all duration-200",
-                    activeChapterIndex === ci
-                      ? "text-primary bg-primary/10"
-                      : "text-foreground/70 hover:bg-muted"
+            ) : chapters.map((ch, ci) => {
+              const isActiveChapter = activeChapterIndex === ci;
+              return (
+                <div key={ci}>
+                  <button
+                    onClick={() => { setActiveChapterIndex(ci); setActiveTopicIndex(0); }}
+                    className={cn(
+                      "w-full flex items-center gap-2.5 text-left px-3 py-2.5 rounded-xl transition-all duration-200 group",
+                      isActiveChapter
+                        ? "bg-primary/10 text-primary"
+                        : "text-foreground/70 hover:bg-muted hover:text-foreground"
+                    )}
+                  >
+                    <span className={cn(
+                      "w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-black shrink-0",
+                      isActiveChapter ? "bg-primary text-primary-foreground" : "bg-muted-foreground/20 text-muted-foreground group-hover:bg-muted-foreground/30"
+                    )}>
+                      {ci + 1}
+                    </span>
+                    <span className="text-xs font-semibold leading-snug">{ch.name}</span>
+                    <ChevronRight className={cn(
+                      "w-3 h-3 ml-auto shrink-0 transition-transform",
+                      isActiveChapter ? "rotate-90 text-primary" : "text-muted-foreground/40"
+                    )} />
+                  </button>
+
+                  {isActiveChapter && (
+                    <div className="mt-1 mb-2 ml-4 pl-3 border-l-2 border-primary/20 space-y-0.5 animate-fade-in">
+                      {ch.topics.map((topic: any, ti: number) => {
+                        const name = typeof topic === 'string' ? topic : topic.name;
+                        const isActiveTopic = activeTopicIndex === ti;
+                        return (
+                          <button
+                            key={ti}
+                            onClick={() => setActiveTopicIndex(ti)}
+                            className={cn(
+                              "w-full flex items-center gap-2 text-left text-xs px-3 py-2 rounded-lg transition-all duration-200",
+                              isActiveTopic
+                                ? "text-primary font-semibold bg-primary/5"
+                                : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
+                            )}
+                          >
+                            <div className={cn(
+                              "w-1.5 h-1.5 rounded-full shrink-0 transition-all",
+                              isActiveTopic ? "bg-primary" : "bg-muted-foreground/30"
+                            )} />
+                            {name}
+                          </button>
+                        );
+                      })}
+                    </div>
                   )}
-                >
-                  {ch.name}
-                </button>
-                {activeChapterIndex === ci && (
-                  <div className="ml-3 mt-1.5 space-y-0.5 animate-fade-in border-l-2 border-primary/10 pl-2">
-                    {ch.topics.map((topic: any, ti: number) => {
-                      const name = typeof topic === 'string' ? topic : topic.name;
-                      return (
-                        <button
-                          key={ti}
-                          onClick={() => setActiveTopicIndex(ti)}
-                          className={cn(
-                            "w-full flex items-center gap-2 text-left text-xs px-3 py-2.5 rounded-lg transition-all duration-200",
-                            activeTopicIndex === ti
-                              ? "text-primary font-bold bg-primary/5"
-                              : "text-muted-foreground hover:text-foreground"
-                          )}
-                        >
-                          <div className={cn("w-1 h-1 rounded-full", activeTopicIndex === ti ? "bg-primary" : "bg-transparent")} />
-                          <span>{name}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            ))}
+                </div>
+              );
+            })}
           </div>
         </div>
 
-        {/* Main content */}
-        <div className="flex-1 overflow-y-auto bg-slate-50/30">
+        {/* ── Main content ── */}
+        <div className="flex-1 overflow-y-auto">
           {fetchingLesson ? (
-            <div className="flex flex-col items-center justify-center h-full animate-fade-in">
-              <div className="relative mb-6">
+            <div className="flex flex-col items-center justify-center h-full animate-fade-in gap-5">
+              <div className="relative">
                 <div className="absolute inset-0 bg-primary/20 rounded-full animate-ping" />
-                <div className="relative w-16 h-16 rounded-full bg-primary flex items-center justify-center shadow-xl">
-                  <BookOpen className="w-8 h-8 text-primary-foreground animate-pulse" />
+                <div className="relative w-16 h-16 rounded-full bg-primary flex items-center justify-center shadow-xl shadow-primary/30">
+                  <BookOpen className="w-7 h-7 text-primary-foreground" />
                 </div>
               </div>
-              <h3 className="text-xl font-bold text-foreground mb-1">Crafting Lesson Content</h3>
-              <p className="text-sm text-muted-foreground">Personalizing explanations for <span className="text-primary font-semibold">{topicName}</span>...</p>
+              <div className="text-center">
+                <h3 className="text-lg font-bold text-foreground mb-1">Crafting your lesson...</h3>
+                <p className="text-sm text-muted-foreground">
+                  Personalizing <span className="text-primary font-semibold">{topicName}</span> for Class {grade}
+                </p>
+              </div>
             </div>
           ) : lessonError ? (
-            <div className="max-w-xl mx-auto mt-20 p-10 glass-card text-center transition-all animate-scale-in">
-              <AlertCircle className="w-12 h-12 text-destructive mx-auto mb-4" />
-              <h3 className="text-lg font-bold text-foreground mb-2">Lesson Unavailable</h3>
-              <p className="text-sm text-muted-foreground mb-6">{lessonError}</p>
-              <Button onClick={() => window.location.reload()} variant="outline">Try Refreshing</Button>
+            <div className="max-w-md mx-auto mt-24 p-8 glass-card text-center animate-scale-in">
+              <div className="w-14 h-14 rounded-2xl bg-destructive/10 flex items-center justify-center mx-auto mb-4">
+                <AlertCircle className="w-7 h-7 text-destructive" />
+              </div>
+              <h3 className="text-base font-bold text-foreground mb-2">Lesson Unavailable</h3>
+              <p className="text-sm text-muted-foreground mb-5 leading-relaxed">{lessonError}</p>
+              <Button onClick={() => window.location.reload()} variant="outline" size="sm">Try Refreshing</Button>
             </div>
           ) : lessonContent ? (
-            <div className="max-w-3xl mx-auto px-6 md:px-10 py-8">
-              {/* Header */}
-              <div className="mb-6 animate-fade-in">
-                <div className="flex items-center gap-1.5 text-primary/70 text-xs font-semibold uppercase tracking-widest mb-2">
-                  <Book className="w-3 h-3" />
-                  {currentChapter?.name}
+            <div className="max-w-3xl mx-auto px-5 md:px-10 py-8">
+
+              {/* Topic header */}
+              <div className="mb-7 animate-fade-in">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground mb-2">
+                  <Book className="w-3.5 h-3.5" />
+                  <span>{currentChapter?.name}</span>
+                  <ChevronRight className="w-3 h-3 opacity-50" />
+                  <span className="text-primary">{selectedSubject}</span>
                 </div>
-                <h1 className="text-2xl md:text-3xl font-bold text-foreground leading-snug">
+                <h1 className="text-2xl md:text-3xl font-bold text-foreground leading-snug mb-3">
                   {topicName}
                 </h1>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted px-3 py-1 rounded-full">
+                    <Clock className="w-3 h-3" /> ~{Math.ceil((lessonContent.explanation?.length || 500) / 800)} min read
+                  </span>
+                  {lessonContent.formulas?.length > 0 && (
+                    <span className="flex items-center gap-1.5 text-xs text-violet-600 bg-violet-50 dark:bg-violet-950/30 px-3 py-1 rounded-full">
+                      <Sigma className="w-3 h-3" /> {lessonContent.formulas.length} formula{lessonContent.formulas.length > 1 ? 's' : ''}
+                    </span>
+                  )}
+                  {images.length > 0 && (
+                    <span className="flex items-center gap-1.5 text-xs text-sky-600 bg-sky-50 dark:bg-sky-950/30 px-3 py-1 rounded-full">
+                      <ImageIcon className="w-3 h-3" /> {images.length} images
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* Tabs */}
-              <div className="flex gap-1 border-b border-border/60 mb-6 overflow-x-auto">
+              <div className="flex gap-0 border-b border-border/60 mb-7 overflow-x-auto">
                 {tabs.map((tab) => (
                   <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
                     className={cn(
-                      "flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-all border-b-2 -mb-px whitespace-nowrap",
+                      "flex items-center gap-1.5 px-4 py-3 text-sm font-medium transition-all border-b-2 -mb-px whitespace-nowrap",
                       activeTab === tab.id
                         ? "border-primary text-primary"
-                        : "border-transparent text-muted-foreground hover:text-foreground"
+                        : "border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/30"
                     )}
                   >
                     <tab.icon className="w-3.5 h-3.5" />
                     {tab.label}
+                    {tab.id === "quiz" && quizQuestions.length > 0 && (
+                      <span className="ml-1 text-[10px] font-bold bg-muted px-1.5 py-0.5 rounded-full text-muted-foreground">
+                        {quizQuestions.length}
+                      </span>
+                    )}
                   </button>
                 ))}
               </div>
 
-              {/* Content Area */}
+              {/* Content */}
               <div className="animate-fade-in" key={activeTab}>
 
-                {/* ── Explanation ── */}
+                {/* ── EXPLANATION ── */}
                 {activeTab === "explanation" && (
-                  <div className="space-y-6">
-                    <div className="prose prose-sm md:prose-base max-w-none text-foreground/80 leading-relaxed prose-headings:text-foreground prose-headings:font-semibold prose-strong:text-foreground">
+                  <div className="space-y-8">
+                    {/* Prose */}
+                    <div className="prose prose-sm md:prose-base max-w-none text-foreground/85 leading-relaxed
+                      prose-headings:text-foreground prose-headings:font-bold prose-headings:mt-6 prose-headings:mb-3
+                      prose-h2:text-xl prose-h3:text-base
+                      prose-strong:text-foreground prose-strong:font-semibold
+                      prose-p:mb-4 prose-p:leading-7
+                      prose-ul:my-3 prose-li:my-1
+                      prose-code:bg-muted prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-sm prose-code:font-mono
+                      prose-blockquote:border-primary/40 prose-blockquote:bg-primary/5 prose-blockquote:rounded-r-xl prose-blockquote:not-italic
+                    ">
                       <ReactMarkdown
                         remarkPlugins={MD_PLUGINS.remark}
                         rehypePlugins={MD_PLUGINS.rehype}
@@ -330,55 +414,23 @@ export default function LearnPage() {
                       </ReactMarkdown>
                     </div>
 
-                    {/* Related images inline */}
-                    {(loadingImages || images.length > 0) && (
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">Related Images</p>
-                        {loadingImages ? (
-                          <div className="grid grid-cols-3 gap-2">
-                            {Array.from({ length: 6 }).map((_, i) => (
-                              <div key={i} className="aspect-video rounded-lg bg-muted animate-pulse" />
-                            ))}
+                    {/* Key Formulas */}
+                    {lessonContent.formulas?.length > 0 && (
+                      <div className="bg-violet-50 dark:bg-violet-950/20 border border-violet-200 dark:border-violet-800 rounded-2xl p-5">
+                        <div className="flex items-center gap-2 mb-4">
+                          <div className="p-1.5 rounded-lg bg-violet-100 dark:bg-violet-900/50">
+                            <Sigma className="w-4 h-4 text-violet-600 dark:text-violet-400" />
                           </div>
-                        ) : (
-                          <div className="grid grid-cols-3 gap-2">
-                            {images.map((img, i) => (
-                              <a
-                                key={i}
-                                href={img.page}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="group block rounded-lg overflow-hidden border border-border/60 hover:border-primary/40 transition-all hover:shadow-md"
-                                title={img.title}
-                              >
-                                <div className="aspect-video bg-muted overflow-hidden">
-                                  <img
-                                    src={img.thumb}
-                                    alt={img.title}
-                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                                  />
-                                </div>
-                                <p className="px-2 py-1 text-[10px] text-muted-foreground truncate">{img.title}</p>
-                              </a>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {lessonContent.formulas && lessonContent.formulas.length > 0 && (
-                      <div className="p-5 bg-primary/5 rounded-xl border border-primary/10">
-                        <h4 className="text-xs font-semibold uppercase tracking-widest text-primary mb-3 flex items-center gap-1.5">
-                          <ListChecks className="w-3.5 h-3.5" /> Key Formulas
-                        </h4>
+                          <h4 className="text-sm font-bold text-violet-700 dark:text-violet-300">Key Formulas</h4>
+                        </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           {lessonContent.formulas.map((f: string, i: number) => {
-                            const raw = preprocessLatex(f.trim()).replace(/^\$\$?([\s\S]*?)\$\$?$/, '$1').trim();
+                            const raw = stripMathDelimiters(f);
                             return (
-                              <div key={i} className="p-3 bg-white rounded-lg border border-border/60 text-center overflow-x-auto">
+                              <div key={i} className="p-4 bg-white dark:bg-card rounded-xl border border-violet-100 dark:border-violet-800/50 text-center overflow-x-auto shadow-sm">
                                 <ReactMarkdown
-                                  remarkPlugins={[remarkMath]}
-                                  rehypePlugins={[[rehypeKatex, KATEX_OPTIONS]]}
+                                  remarkPlugins={MD_MATH_ONLY.remark}
+                                  rehypePlugins={MD_MATH_ONLY.rehype}
                                 >
                                   {`$$${raw}$$`}
                                 </ReactMarkdown>
@@ -388,34 +440,116 @@ export default function LearnPage() {
                         </div>
                       </div>
                     )}
+
+                    {/* Related images */}
+                    {(loadingImages || images.length > 0) && (
+                      <div>
+                        <div className="flex items-center gap-2 mb-3">
+                          <ImageIcon className="w-3.5 h-3.5 text-muted-foreground" />
+                          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Related Images</p>
+                        </div>
+                        {loadingImages ? (
+                          <div className="flex gap-3 overflow-x-auto pb-2">
+                            {Array.from({ length: 5 }).map((_, i) => (
+                              <div key={i} className="w-48 h-32 rounded-xl bg-muted animate-pulse shrink-0" />
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="flex gap-3 overflow-x-auto pb-3 -mx-1 px-1">
+                            {images.map((img, i) => (
+                              <a
+                                key={i}
+                                href={img.page}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="group shrink-0 w-44 rounded-xl overflow-hidden border border-border/60 hover:border-primary/40 transition-all hover:shadow-md block"
+                                title={img.title}
+                              >
+                                <div className="w-full h-28 bg-muted overflow-hidden">
+                                  <img
+                                    src={img.thumb}
+                                    alt={img.title}
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                  />
+                                </div>
+                                <p className="px-2.5 py-1.5 text-[10px] text-muted-foreground truncate bg-card">{img.title}</p>
+                              </a>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 
-                {/* ── Key Points ── */}
+                {/* ── KEY POINTS ── */}
                 {activeTab === "keypoints" && (
-                  <ul className="space-y-2">
-                    {lessonContent.key_points.map((point: string, i: number) => (
-                      <li key={i} className="flex items-start gap-3 p-3 rounded-lg hover:bg-muted/40 transition-colors">
-                        <CheckCircle2 className="w-4 h-4 text-success shrink-0 mt-0.5" />
-                        <p className="text-sm text-foreground/80 leading-relaxed">{point}</p>
-                      </li>
+                  <div className="space-y-3">
+                    <p className="text-xs text-muted-foreground mb-5">
+                      {lessonContent.key_points?.length} key points for <span className="font-semibold text-foreground">{topicName}</span>
+                    </p>
+                    {lessonContent.key_points?.map((point: string, i: number) => (
+                      <div
+                        key={i}
+                        className="flex gap-4 p-4 rounded-xl border border-border/60 bg-card hover:border-primary/30 hover:bg-primary/5 transition-all duration-200 group"
+                      >
+                        <div className="w-7 h-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center text-xs font-black shrink-0 mt-0.5 group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+                          {i + 1}
+                        </div>
+                        <div className="text-sm text-foreground/85 leading-relaxed flex-1 prose prose-sm max-w-none
+                          prose-strong:text-foreground prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-xs prose-p:my-0">
+                          <ReactMarkdown
+                            remarkPlugins={MD_PLUGINS.remark}
+                            rehypePlugins={MD_PLUGINS.rehype}
+                          >
+                            {preprocessLatex(point)}
+                          </ReactMarkdown>
+                        </div>
+                      </div>
                     ))}
-                  </ul>
+                  </div>
                 )}
 
-                {/* ── Examples ── */}
+                {/* ── EXAMPLES ── */}
                 {activeTab === "examples" && (
-                  <div className="space-y-5">
-                    {lessonContent.examples.map((example: any, i: number) => (
-                      <div key={i} className="border border-border/60 rounded-xl overflow-hidden">
-                        <div className="px-5 py-4 bg-card">
-                          <span className="text-xs font-semibold text-primary uppercase tracking-widest">Example {i + 1}</span>
-                          <h3 className="text-base font-semibold text-foreground mt-1">{example.title}</h3>
-                          <p className="text-sm text-muted-foreground mt-1 leading-relaxed">{example.scenario}</p>
+                  <div className="space-y-6">
+                    {lessonContent.examples?.map((example: any, i: number) => (
+                      <div key={i} className="rounded-2xl border border-border/60 overflow-hidden bg-card shadow-sm">
+                        {/* Example header */}
+                        <div className="flex items-center gap-3 px-5 py-4 border-b border-border/40 bg-muted/30">
+                          <div className="w-8 h-8 rounded-xl bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center shrink-0">
+                            <Lightbulb className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-amber-600 dark:text-amber-400">Example {i + 1}</p>
+                            <h3 className="text-sm font-bold text-foreground leading-snug">{example.title}</h3>
+                          </div>
                         </div>
-                        <div className="px-5 py-4 bg-muted/30 border-t border-border/40">
-                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-2">Solution</p>
-                          <div className="prose prose-sm max-w-none text-foreground/80 prose-headings:font-semibold prose-strong:text-foreground">
+
+                        {/* Scenario */}
+                        <div className="px-5 py-4 border-b border-border/30">
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">Problem</p>
+                          <div className="text-sm text-foreground/85 leading-relaxed prose prose-sm max-w-none
+                            prose-strong:text-foreground prose-p:my-0">
+                            <ReactMarkdown
+                              remarkPlugins={MD_PLUGINS.remark}
+                              rehypePlugins={MD_PLUGINS.rehype}
+                            >
+                              {preprocessLatex(example.scenario)}
+                            </ReactMarkdown>
+                          </div>
+                        </div>
+
+                        {/* Solution */}
+                        <div className="px-5 py-4 bg-emerald-50/50 dark:bg-emerald-950/10">
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400 mb-2 flex items-center gap-1.5">
+                            <CheckCircle2 className="w-3 h-3" /> Solution
+                          </p>
+                          <div className="text-sm text-foreground/85 leading-relaxed prose prose-sm max-w-none
+                            prose-headings:text-foreground prose-headings:font-semibold
+                            prose-strong:text-foreground
+                            prose-code:bg-white/70 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-xs
+                            prose-p:mb-3">
                             <ReactMarkdown
                               remarkPlugins={MD_PLUGINS.remark}
                               rehypePlugins={MD_PLUGINS.rehype}
@@ -429,74 +563,136 @@ export default function LearnPage() {
                   </div>
                 )}
 
-                {/* ── Quiz ── */}
+                {/* ── QUIZ ── */}
                 {activeTab === "quiz" && (
-                  <div className="space-y-5">
-                    <p className="text-sm text-muted-foreground">Answer all questions, then submit to see explanations.</p>
-
-                    {lessonContent.diagnostic_quiz.map((q: any, qi: number) => (
-                      <div key={qi} className="border border-border/60 rounded-xl p-5">
-                        <p className="text-sm font-semibold text-foreground mb-3 flex items-start gap-2.5">
-                          <span className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs shrink-0 mt-0.5">{qi + 1}</span>
-                          {q.question}
-                        </p>
-                        <div className="space-y-2">
-                          {q.options.map((opt: string, oi: number) => {
-                            const isSelected = selectedAnswers[qi] === oi;
-                            const isCorrect = submitted && opt === q.correct_answer;
-                            const isWrong = submitted && isSelected && opt !== q.correct_answer;
-                            return (
-                              <button
-                                key={oi}
-                                disabled={submitted}
-                                onClick={() => setSelectedAnswers((prev) => ({ ...prev, [qi]: oi }))}
-                                className={cn(
-                                  "w-full text-left px-4 py-2.5 rounded-lg text-sm border transition-all",
-                                  isCorrect
-                                    ? "bg-success-soft border-success text-success"
-                                    : isWrong
-                                      ? "bg-danger-soft border-destructive text-destructive"
-                                      : isSelected
-                                        ? "bg-primary/5 border-primary text-primary"
-                                        : "bg-background border-border/60 hover:border-primary/40 hover:bg-muted/30"
-                                )}
-                              >
-                                <span className="text-xs font-bold mr-2 opacity-50">{String.fromCharCode(65 + oi)}.</span>
-                                {opt}
-                              </button>
-                            );
-                          })}
-                        </div>
-                        {submitted && (
-                          <div className="mt-3 pt-3 border-t border-border/40">
-                            <p className="text-xs text-muted-foreground leading-relaxed">{q.explanation}</p>
+                  <div className="space-y-6">
+                    {/* Progress bar */}
+                    {!submitted && (
+                      <div className="flex items-center gap-3 p-4 bg-muted/40 rounded-xl border border-border/40">
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between text-xs mb-1.5">
+                            <span className="font-semibold text-foreground">Progress</span>
+                            <span className="text-muted-foreground">{answeredCount} / {quizQuestions.length} answered</span>
                           </div>
-                        )}
+                          <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-primary rounded-full transition-all duration-500"
+                              style={{ width: `${(answeredCount / quizQuestions.length) * 100}%` }}
+                            />
+                          </div>
+                        </div>
                       </div>
-                    ))}
+                    )}
+
+                    {/* Score card */}
+                    {submitted && (
+                      <div className={cn(
+                        "p-5 rounded-2xl border-2 text-center",
+                        correctCount === quizQuestions.length
+                          ? "bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800"
+                          : correctCount >= quizQuestions.length / 2
+                            ? "bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800"
+                            : "bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800"
+                      )}>
+                        <p className="text-3xl font-black mb-1">
+                          {correctCount}<span className="text-lg font-bold text-muted-foreground">/{quizQuestions.length}</span>
+                        </p>
+                        <p className="text-sm font-semibold text-foreground">
+                          {correctCount === quizQuestions.length ? "Perfect score! 🎉" : correctCount >= quizQuestions.length / 2 ? "Good effort! Keep going." : "Review the material and try again."}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">Explanations are shown below each question</p>
+                      </div>
+                    )}
+
+                    {/* Questions */}
+                    {quizQuestions.map((q: any, qi: number) => {
+                      const isAnswered = selectedAnswers[qi] !== undefined;
+                      return (
+                        <div key={qi} className="rounded-2xl border border-border/60 bg-card overflow-hidden shadow-sm">
+                          <div className="px-5 py-4 border-b border-border/30">
+                            <div className="flex items-start gap-3">
+                              <span className="w-6 h-6 rounded-lg bg-primary/10 text-primary flex items-center justify-center text-xs font-black shrink-0 mt-0.5">
+                                {qi + 1}
+                              </span>
+                              <div className="text-sm font-semibold text-foreground leading-relaxed flex-1 prose prose-sm max-w-none prose-p:my-0 prose-strong:text-foreground">
+                                <ReactMarkdown
+                                  remarkPlugins={MD_PLUGINS.remark}
+                                  rehypePlugins={MD_PLUGINS.rehype}
+                                >
+                                  {preprocessLatex(q.question)}
+                                </ReactMarkdown>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="px-5 py-4 space-y-2">
+                            {q.options.map((opt: string, oi: number) => {
+                              const isSelected = selectedAnswers[qi] === oi;
+                              const isCorrect = submitted && opt === q.correct_answer;
+                              const isWrong = submitted && isSelected && opt !== q.correct_answer;
+                              return (
+                                <button
+                                  key={oi}
+                                  disabled={submitted}
+                                  onClick={() => setSelectedAnswers((prev) => ({ ...prev, [qi]: oi }))}
+                                  className={cn(
+                                    "w-full flex items-center gap-3 text-left px-4 py-3 rounded-xl text-sm border-2 transition-all",
+                                    isCorrect
+                                      ? "bg-emerald-50 dark:bg-emerald-950/20 border-emerald-400 text-emerald-700 dark:text-emerald-300"
+                                      : isWrong
+                                        ? "bg-red-50 dark:bg-red-950/20 border-red-400 text-red-700 dark:text-red-300"
+                                        : isSelected
+                                          ? "bg-primary/5 border-primary text-primary"
+                                          : "border-border/60 hover:border-primary/40 hover:bg-muted/40 text-foreground/75 disabled:opacity-60"
+                                  )}
+                                >
+                                  <span className={cn(
+                                    "w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-black shrink-0 transition-colors",
+                                    isCorrect ? "bg-emerald-500 text-white" :
+                                    isWrong ? "bg-red-400 text-white" :
+                                    isSelected ? "bg-primary text-primary-foreground" :
+                                    "bg-muted text-muted-foreground"
+                                  )}>
+                                    {String.fromCharCode(65 + oi)}
+                                  </span>
+                                  <span className="flex-1">{opt}</span>
+                                  {isCorrect && <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-500" />}
+                                  {isWrong && <XCircle className="w-4 h-4 shrink-0 text-red-400" />}
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          {submitted && (
+                            <div className="px-5 py-3 bg-muted/30 border-t border-border/30">
+                              <p className="text-xs text-muted-foreground leading-relaxed">
+                                <span className="font-semibold text-foreground">Explanation: </span>
+                                {q.explanation}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
 
                     {!submitted ? (
                       <Button
-                        className="w-full"
+                        className="w-full h-11 rounded-xl font-semibold"
                         onClick={() => setSubmitted(true)}
-                        disabled={Object.keys(selectedAnswers).length < lessonContent.diagnostic_quiz.length}
+                        disabled={answeredCount < quizQuestions.length}
                       >
-                        Submit Answers
+                        {answeredCount < quizQuestions.length
+                          ? `Answer ${quizQuestions.length - answeredCount} more to submit`
+                          : "Submit Answers"}
                       </Button>
                     ) : (
-                      <div className="flex items-center justify-between p-4 bg-muted/40 rounded-xl border border-border/60">
-                        <div>
-                          <p className="text-sm font-semibold text-foreground">
-                            Score: {lessonContent.diagnostic_quiz.filter((q: any, i: number) =>
-                              q.options[selectedAnswers[i]] === q.correct_answer
-                            ).length} / {lessonContent.diagnostic_quiz.length}
-                          </p>
-                          <p className="text-xs text-muted-foreground mt-0.5">Explanations shown above</p>
-                        </div>
-                        <Button variant="outline" size="sm" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
-                          Back to top
-                        </Button>
-                      </div>
+                      <Button
+                        variant="outline"
+                        className="w-full h-11 rounded-xl"
+                        onClick={() => { setSubmitted(false); setSelectedAnswers({}); }}
+                      >
+                        Try Again
+                      </Button>
                     )}
                   </div>
                 )}
@@ -504,9 +700,9 @@ export default function LearnPage() {
               </div>
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center h-full opacity-50 space-y-4">
-              <Book className="w-16 h-16 text-muted-foreground/30" />
-              <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Select a Chapter to begin</p>
+            <div className="flex flex-col items-center justify-center h-full gap-4 opacity-40">
+              <Book className="w-16 h-16 text-muted-foreground" />
+              <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Select a topic to begin</p>
             </div>
           )}
         </div>
