@@ -301,8 +301,16 @@ export default function LearnPage() {
           } else {
             setLessonError("Could not retrieve lesson content.");
           }
-        } catch (err) {
-          setLessonError("AI generation failed. The topic might be too complex or the service is busy.");
+        } catch (err: any) {
+          const detail = err.response?.data?.detail;
+          if (err.response?.status === 429 || detail?.error === "daily_limit_reached") {
+            setLessonError(
+              detail?.message ??
+              "You've learned 3 topics today. Upgrade to Pro (₹200/month) for unlimited learning."
+            );
+          } else {
+            setLessonError("AI generation failed. The topic might be too complex or the service is busy.");
+          }
           console.error(err);
         } finally {
           setFetchingLesson(false);

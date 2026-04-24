@@ -163,9 +163,13 @@ export default function AIToolsPage() {
         throw new Error("Invalid response format from server");
       }
     } catch (error: any) {
+      const detail = error.response?.data?.detail;
+      const isLimitError = error.response?.status === 429 || detail?.error === "daily_limit_reached";
       toast({
-        title: "Generation failed",
-        description: error.response?.data?.detail || error.message || "Something went wrong.",
+        title: isLimitError ? "Daily limit reached" : "Generation failed",
+        description: isLimitError
+          ? (detail?.message ?? "You've hit your free daily limit. Upgrade to Pro (₹200/month) for unlimited access.")
+          : (typeof detail === "string" ? detail : error.message ?? "Something went wrong."),
         variant: "destructive",
       });
     } finally {
