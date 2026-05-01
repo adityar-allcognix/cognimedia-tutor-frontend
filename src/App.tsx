@@ -11,6 +11,11 @@ import HistoryPage from "./pages/HistoryPage.tsx";
 import AuthPage from "./pages/AuthPage.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import { ProtectedRoute } from "./components/ProtectedRoute";
+import { RoleRoute } from "./components/RoleRoute";
+import SchoolAdminPage from "./pages/SchoolAdminPage.tsx";
+import MaterialsPage from "./pages/MaterialsPage.tsx";
+import ParentProgressPage from "./pages/ParentProgressPage.tsx";
+import OnboardingPage from "./pages/OnboardingPage.tsx";
 
 const queryClient = new QueryClient();
 
@@ -27,6 +32,10 @@ const App = () => (
           <Route path="/ai-tools" element={<ProtectedRoute><AIToolsPage /></ProtectedRoute>} />
           <Route path="/analytics" element={<ProtectedRoute><AnalyticsPage /></ProtectedRoute>} />
           <Route path="/history" element={<ProtectedRoute><HistoryPage /></ProtectedRoute>} />
+          <Route path="/materials" element={<ProtectedRoute><MaterialsPage /></ProtectedRoute>} />
+          <Route path="/school-admin" element={<RoleRoute allowed={["school_admin"]}><SchoolAdminPage /></RoleRoute>} />
+          <Route path="/onboarding" element={<RoleRoute allowed={["school_admin", "teacher"]}><OnboardingPage /></RoleRoute>} />
+          <Route path="/parent-progress" element={<RoleRoute allowed={["parent"]}><ParentProgressPage /></RoleRoute>} />
           <Route path="*" element={<ProtectedRoute><NotFound /></ProtectedRoute>} />
         </Routes>
       </BrowserRouter>

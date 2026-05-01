@@ -6,6 +6,10 @@ import {
   Sparkles,
   BarChart3,
   History,
+  FolderOpen,
+  School,
+  Users,
+  UserPlus,
   LogOut,
   Zap,
   Crown,
@@ -17,20 +21,44 @@ import { Button } from "./ui/button";
 import { Progress } from "./ui/progress";
 import { UpgradeModal } from "./UpgradeModal";
 import { getSubscriptionStatus, type UsageStatus } from "@/lib/subscription";
+import { createSchoolSubscriptionRequest } from "@/lib/api";
 
-const navItems = [
-  { title: "Dashboard", url: "/", icon: LayoutDashboard },
-  { title: "Learn", url: "/learn", icon: BookOpen },
-  { title: "AI Tools", url: "/ai-tools", icon: Sparkles },
-  { title: "Analytics", url: "/analytics", icon: BarChart3 },
-  { title: "History", url: "/history", icon: History },
-];
+const navItemsByRole = {
+  school_admin: [
+    { title: "Dashboard", url: "/", icon: LayoutDashboard },
+    { title: "Approvals", url: "/school-admin", icon: School },
+    { title: "Onboarding", url: "/onboarding", icon: UserPlus },
+    { title: "Materials", url: "/materials", icon: FolderOpen },
+  ],
+  teacher: [
+    { title: "Dashboard", url: "/", icon: LayoutDashboard },
+    { title: "Onboarding", url: "/onboarding", icon: UserPlus },
+    { title: "AI Tools", url: "/ai-tools", icon: Sparkles },
+    { title: "Materials", url: "/materials", icon: FolderOpen },
+    { title: "History", url: "/history", icon: History },
+  ],
+  student: [
+    { title: "Dashboard", url: "/", icon: LayoutDashboard },
+    { title: "Learn", url: "/learn", icon: BookOpen },
+    { title: "AI Tools", url: "/ai-tools", icon: Sparkles },
+    { title: "Analytics", url: "/analytics", icon: BarChart3 },
+    { title: "History", url: "/history", icon: History },
+    { title: "Materials", url: "/materials", icon: FolderOpen },
+  ],
+  parent: [
+    { title: "Dashboard", url: "/", icon: LayoutDashboard },
+    { title: "Children", url: "/parent-progress", icon: Users },
+    { title: "Materials", url: "/materials", icon: FolderOpen },
+  ],
+} as const;
 
 export function AppSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const session = getAuthSession();
   const user = session?.user;
+  const role = user?.role ?? "student";
+  const navItems = navItemsByRole[role as keyof typeof navItemsByRole] ?? navItemsByRole.student;
 
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [status, setStatus] = useState<UsageStatus | null>(null);
@@ -48,6 +76,16 @@ export function AppSidebar() {
 
   const handleUpgradeSuccess = () => {
     getSubscriptionStatus().then(setStatus).catch(() => {});
+  };
+
+  const handleSchoolPlanRequest = async () => {
+    try {
+      await createSchoolSubscriptionRequest({});
+      getSubscriptionStatus().then(setStatus).catch(() => {});
+      alert("Request sent to your school admin for approval.");
+    } catch (error: any) {
+      alert(error?.response?.data?.detail || "Failed to send request.");
+    }
   };
 
   const toolPct = status && !status.is_pro && status.tool_uses.limit
@@ -95,7 +133,7 @@ export function AppSidebar() {
         </nav>
 
         {/* Usage / Upgrade card */}
-        {status && (
+        {status && role === "student" && (
           status.is_pro ? (
             <div className="mt-6 p-4 rounded-2xl bg-primary/10 border border-primary/20 flex items-center gap-3">
               <Crown className="w-4 h-4 text-primary flex-shrink-0" />
@@ -132,6 +170,14 @@ export function AppSidebar() {
                 <Zap className="w-3 h-3 mr-1.5" />
                 Upgrade — ₹200/mo
               </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full text-xs"
+                onClick={handleSchoolPlanRequest}
+              >
+                Request via School
+              </Button>
             </div>
           )
         )}
@@ -147,6 +193,7 @@ export function AppSidebar() {
                 {user?.full_name || "Student"}
               </p>
               <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground/70">{role.replace("_", " ")}</p>
             </div>
           </div>
           <Button

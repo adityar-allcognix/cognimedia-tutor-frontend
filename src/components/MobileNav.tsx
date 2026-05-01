@@ -5,19 +5,43 @@ import {
   Sparkles,
   BarChart3,
   History,
+  FolderOpen,
+  School,
+  Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getAuthSession } from "@/lib/auth";
 
-const navItems = [
-  { title: "Dashboard", url: "/", icon: LayoutDashboard },
-  { title: "Learn", url: "/learn", icon: BookOpen },
-  { title: "AI Tools", url: "/ai-tools", icon: Sparkles },
-  { title: "Analytics", url: "/analytics", icon: BarChart3 },
-  { title: "History", url: "/history", icon: History },
-];
+const navItemsByRole = {
+  school_admin: [
+    { title: "Home", url: "/", icon: LayoutDashboard },
+    { title: "Approvals", url: "/school-admin", icon: School },
+    { title: "Materials", url: "/materials", icon: FolderOpen },
+  ],
+  teacher: [
+    { title: "Home", url: "/", icon: LayoutDashboard },
+    { title: "AI", url: "/ai-tools", icon: Sparkles },
+    { title: "History", url: "/history", icon: History },
+    { title: "Materials", url: "/materials", icon: FolderOpen },
+  ],
+  student: [
+    { title: "Home", url: "/", icon: LayoutDashboard },
+    { title: "Learn", url: "/learn", icon: BookOpen },
+    { title: "AI", url: "/ai-tools", icon: Sparkles },
+    { title: "Stats", url: "/analytics", icon: BarChart3 },
+    { title: "History", url: "/history", icon: History },
+  ],
+  parent: [
+    { title: "Home", url: "/", icon: LayoutDashboard },
+    { title: "Children", url: "/parent-progress", icon: Users },
+    { title: "Materials", url: "/materials", icon: FolderOpen },
+  ],
+} as const;
 
 export function MobileNav() {
   const location = useLocation();
+  const role = getAuthSession()?.user.role ?? "student";
+  const navItems = navItemsByRole[role as keyof typeof navItemsByRole] ?? navItemsByRole.student;
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-card/80 backdrop-blur-xl border-t border-border/50 px-2 pb-[env(safe-area-inset-bottom)]">

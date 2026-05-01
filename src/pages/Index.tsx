@@ -29,6 +29,10 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchDashboardData = async () => {
       if (!userId) return;
+      if (user?.role !== "student") {
+        setLoading(false);
+        return;
+      }
       try {
         setLoading(true);
         const [analyticsRes, recRes, historyRes] = await Promise.all([
@@ -48,7 +52,7 @@ export default function Dashboard() {
     };
 
     fetchDashboardData();
-  }, [userId]);
+  }, [userId, user?.role]);
 
   if (loading) {
     return (
@@ -56,6 +60,49 @@ export default function Dashboard() {
         <div className="flex flex-col items-center justify-center h-screen">
           <Loader2 className="w-12 h-12 animate-spin text-primary mb-4" />
           <p className="text-muted-foreground">Personalizing your dashboard...</p>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (user?.role === "school_admin") {
+    return (
+      <AppLayout>
+        <div className="max-w-4xl mx-auto px-4 md:px-8 py-8 md:py-12">
+          <h1 className="text-3xl font-bold text-foreground mb-2">School Admin Dashboard</h1>
+          <p className="text-muted-foreground mb-6">Manage school approvals and monitor platform adoption.</p>
+          <Link to="/school-admin">
+            <Button>Open Subscription Approvals</Button>
+          </Link>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (user?.role === "teacher") {
+    return (
+      <AppLayout>
+        <div className="max-w-4xl mx-auto px-4 md:px-8 py-8 md:py-12">
+          <h1 className="text-3xl font-bold text-foreground mb-2">Teacher Workspace</h1>
+          <p className="text-muted-foreground mb-6">Create AI resources and publish study materials for your students.</p>
+          <div className="flex gap-3">
+            <Link to="/ai-tools"><Button>Open AI Tools</Button></Link>
+            <Link to="/materials"><Button variant="outline">Manage Materials</Button></Link>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (user?.role === "parent") {
+    return (
+      <AppLayout>
+        <div className="max-w-4xl mx-auto px-4 md:px-8 py-8 md:py-12">
+          <h1 className="text-3xl font-bold text-foreground mb-2">Parent Dashboard</h1>
+          <p className="text-muted-foreground mb-6">Track your child's learning consistency and mastery progress.</p>
+          <Link to="/parent-progress">
+            <Button>View Children Progress</Button>
+          </Link>
         </div>
       </AppLayout>
     );

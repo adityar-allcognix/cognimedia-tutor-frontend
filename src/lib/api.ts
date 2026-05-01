@@ -21,6 +21,23 @@ export type AuthPayload = {
   password: string;
   full_name?: string;
   grade?: number;
+  role?: "school_admin" | "teacher" | "student" | "parent";
+  school_name?: string;
+  school_code?: string;
+  identifier?: string;
+  admin_verification_code?: string;
+};
+
+export type RoleResolvePayload = {
+  school_code: string;
+  identifier: string;
+};
+
+export type RoleResolveResponse = {
+  role: "teacher" | "student" | "parent";
+  grade?: number | null;
+  school_name: string;
+  school_code: string;
 };
 
 export const signup = async (payload: AuthPayload) => {
@@ -33,8 +50,141 @@ export const login = async (payload: { email: string; password: string }) => {
   return data;
 };
 
+export const resolveRole = async (payload: RoleResolvePayload): Promise<RoleResolveResponse> => {
+  const { data } = await api.post('/auth/resolve-role', payload);
+  return data;
+};
+
 export const getCurrentUser = async () => {
   const { data } = await api.get('/auth/me');
+  return data;
+};
+
+export const createSchoolSubscriptionRequest = async (payload: { note?: string }) => {
+  const { data } = await api.post('/subscription/school/request', payload);
+  return data;
+};
+
+export const getPendingSchoolSubscriptionRequests = async () => {
+  const { data } = await api.get('/subscription/school/requests/pending');
+  return data;
+};
+
+export const decideSchoolSubscriptionRequest = async (
+  requestId: string,
+  payload: { decision: "approve" | "reject"; note?: string }
+) => {
+  const { data } = await api.post(`/subscription/school/requests/${requestId}/decision`, payload);
+  return data;
+};
+
+export const createStudyMaterial = async (payload: {
+  title: string;
+  subject: string;
+  grade: number;
+  description?: string;
+  content_url?: string;
+  content_text?: string;
+}) => {
+  const { data } = await api.post('/materials', payload);
+  return data;
+};
+
+export const uploadStudyMaterial = async (payload: {
+  title: string;
+  subject: string;
+  grade: number;
+  description?: string;
+  file: File;
+}) => {
+  const form = new FormData();
+  form.append("title", payload.title);
+  form.append("subject", payload.subject);
+  form.append("grade", String(payload.grade));
+  if (payload.description) {
+    form.append("description", payload.description);
+  }
+  form.append("file", payload.file);
+
+  const { data } = await api.post('/materials/upload', form, {
+    headers: {
+      "Content-Type": "multipart/form-data",
+    },
+  });
+  return data;
+};
+
+export const getStudyMaterials = async () => {
+  const { data } = await api.get('/materials');
+  return data;
+};
+
+export const downloadStudyMaterial = async (materialId: string, fallbackName?: string) => {
+  const response = await api.get(`/materials/${materialId}/download`, {
+    responseType: "blob",
+  });
+
+  const header = response.headers["content-disposition"] as string | undefined;
+  const filenameMatch = header?.match(/filename="?([^"]+)"?/i);
+  const filename = filenameMatch?.[1] || fallbackName || "material";
+
+  const blobUrl = window.URL.createObjectURL(response.data);
+  const link = document.createElement("a");
+  link.href = blobUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(blobUrl);
+};
+
+export const linkChildToParent = async (payload: { student_email: string }) => {
+  const { data } = await api.post('/parent/link-child', payload);
+  return data;
+};
+
+export const getParentChildrenProgress = async () => {
+  const { data } = await api.get('/parent/children-progress');
+  return data;
+};
+
+export const onboardUser = async (payload: {
+  email: string;
+  full_name?: string;
+  role: "teacher" | "student" | "parent";
+  grade?: number;
+  student_email?: string;
+}) => {
+  const { data } = await api.post('/onboarding/users', payload);
+  return data;
+};
+
+export const onboardUsersBulk = async (payload: {
+  users: Array<{
+    email: string;
+    full_name?: string;
+    role: "teacher" | "student" | "parent";
+    grade?: number;
+    student_email?: string;
+  }>;
+}) => {
+  const { data } = await api.post('/onboarding/users/bulk', payload);
+  return data;
+};
+
+export const onboardUsersBulkFile = async (file: File) => {
+  const form = new FormData();
+  form.append("file", file);
+  const { data } = await api.post('/onboarding/users/bulk-file', form, {
+    headers: {
+      "Content-Type": "multipart/form-data",
+    },
+  });
+  return data;
+};
+
+export const getTeacherClassRoster = async () => {
+  const { data } = await api.get('/onboarding/teacher/class-roster');
   return data;
 };
 

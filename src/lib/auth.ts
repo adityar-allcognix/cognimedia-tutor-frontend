@@ -3,6 +3,10 @@ export type AuthUser = {
   email: string
   full_name: string | null
   grade: number
+  role: "school_admin" | "teacher" | "student" | "parent"
+  school_id: string | null
+  school_name: string | null
+  school_code: string | null
   created_at: string
 }
 
