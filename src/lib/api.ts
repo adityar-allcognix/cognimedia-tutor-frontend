@@ -183,8 +183,73 @@ export const onboardUsersBulkFile = async (file: File) => {
   return data;
 };
 
-export const getTeacherClassRoster = async () => {
+export type TeacherClassParentContact = {
+  parent_user_id: string;
+  full_name: string | null;
+  email: string;
+};
+
+export type TeacherClassStudent = {
+  student_user_id: string;
+  full_name: string | null;
+  email: string;
+  grade: number;
+  parents: TeacherClassParentContact[];
+};
+
+export type TeacherClassRoster = {
+  class_grade: number;
+  student_count: number;
+  students: TeacherClassStudent[];
+};
+
+export const getTeacherClassRoster = async (): Promise<TeacherClassRoster> => {
   const { data } = await api.get('/onboarding/teacher/class-roster');
+  return data;
+};
+
+export type TeacherStudentProgress = {
+  student_user_id: string;
+  full_name: string | null;
+  email: string;
+  grade: number;
+  learning_streak: number;
+  total_points: number;
+  completed_chapters: number;
+  topics_practiced: number;
+  avg_mastery: number;
+};
+
+export const getTeacherStudentProgress = async (
+  studentUserId: string
+): Promise<TeacherStudentProgress> => {
+  const { data } = await api.get(`/onboarding/teacher/students/${studentUserId}/progress`);
+  return data;
+};
+
+export type SchoolOverview = {
+  school_id: string;
+  total_users: number;
+  role_counts: {
+    teachers: number;
+    students: number;
+    parents: number;
+  };
+  pending_subscription_requests: number;
+  approved_subscription_requests: number;
+  rejected_subscription_requests: number;
+  materials_count: number;
+  recent_users: Array<{
+    user_id: string;
+    email: string;
+    full_name: string | null;
+    role: string;
+    created_at: string;
+  }>;
+};
+
+export const getSchoolOverview = async (): Promise<SchoolOverview> => {
+  const { data } = await api.get('/onboarding/school/overview');
   return data;
 };
 

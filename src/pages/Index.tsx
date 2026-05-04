@@ -14,7 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { AppLayout } from "@/components/AppLayout";
 import { Link } from "react-router-dom";
-import { getAnalytics, getHistory, getRecommendations } from "@/lib/api";
+import { getAnalytics, getHistory, getRecommendations, getSchoolOverview, getTeacherClassRoster, type SchoolOverview, type TeacherClassRoster } from "@/lib/api";
 import { getUser, getCurrentUserId } from "@/lib/user";
 
 export default function Dashboard() {
@@ -22,6 +22,10 @@ export default function Dashboard() {
   const [analytics, setAnalytics] = useState<any>(null);
   const [recommendations, setRecommendations] = useState<any>(null);
   const [history, setHistory] = useState<any[]>([]);
+  const [teacherRoster, setTeacherRoster] = useState<TeacherClassRoster | null>(null);
+  const [teacherHistory, setTeacherHistory] = useState<any[]>([]);
+  const [schoolOverview, setSchoolOverview] = useState<SchoolOverview | null>(null);
+  const [teacherRosterLoading, setTeacherRosterLoading] = useState(false);
 
   const user = getUser();
   const userId = getCurrentUserId();
@@ -29,6 +33,40 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchDashboardData = async () => {
       if (!userId) return;
+      if (user?.role === "school_admin") {
+        try {
+          const data = await getSchoolOverview();
+          setSchoolOverview(data);
+        } catch (error) {
+          console.error("Failed to fetch school overview:", error);
+        } finally {
+          setLoading(false);
+        }
+        return;
+      }
+
+      if (user?.role === "teacher") {
+        try {
+          setTeacherRosterLoading(true);
+          const [roster, teacherHistoryRes] = await Promise.all([
+            getTeacherClassRoster(),
+            getHistory(userId, 6),
+          ]);
+          setTeacherRoster(roster);
+          if (teacherHistoryRes.status === "success") {
+            setTeacherHistory(teacherHistoryRes.items || []);
+          } else {
+            setTeacherHistory([]);
+          }
+        } catch (error) {
+          console.error("Failed to fetch teacher class roster:", error);
+        } finally {
+          setTeacherRosterLoading(false);
+          setLoading(false);
+        }
+        return;
+      }
+
       if (user?.role !== "student") {
         setLoading(false);
         return;
@@ -66,28 +104,172 @@ export default function Dashboard() {
   }
 
   if (user?.role === "school_admin") {
+    const teacherCount = schoolOverview?.role_counts?.teachers ?? 0;
+    const studentCount = schoolOverview?.role_counts?.students ?? 0;
+    const parentCount = schoolOverview?.role_counts?.parents ?? 0;
+    const pendingRequests = schoolOverview?.pending_subscription_requests ?? 0;
+    const materialsCount = schoolOverview?.materials_count ?? 0;
+
     return (
       <AppLayout>
-        <div className="max-w-4xl mx-auto px-4 md:px-8 py-8 md:py-12">
-          <h1 className="text-3xl font-bold text-foreground mb-2">School Admin Dashboard</h1>
-          <p className="text-muted-foreground mb-6">Manage school approvals and monitor platform adoption.</p>
-          <Link to="/school-admin">
-            <Button>Open Subscription Approvals</Button>
-          </Link>
+        <div className="max-w-5xl mx-auto px-4 md:px-8 py-8 md:py-12 space-y-6">
+          <div>
+            <h1 className="text-3xl font-bold text-foreground mb-2">School Admin Dashboard</h1>
+            <p className="text-muted-foreground">Monitor adoption, approvals, and school account health in one view.</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+            <div className="rounded-xl border bg-card p-4">
+              <p className="text-xs text-muted-foreground">Teachers</p>
+              <p className="text-2xl font-bold text-foreground">{teacherCount}</p>
+            </div>
+            <div className="rounded-xl border bg-card p-4">
+              <p className="text-xs text-muted-foreground">Students</p>
+              <p className="text-2xl font-bold text-foreground">{studentCount}</p>
+            </div>
+            <div className="rounded-xl border bg-card p-4">
+              <p className="text-xs text-muted-foreground">Parents</p>
+              <p className="text-2xl font-bold text-foreground">{parentCount}</p>
+            </div>
+            <div className="rounded-xl border bg-card p-4">
+              <p className="text-xs text-muted-foreground">Pending Approvals</p>
+              <p className="text-2xl font-bold text-foreground">{pendingRequests}</p>
+            </div>
+            <div className="rounded-xl border bg-card p-4">
+              <p className="text-xs text-muted-foreground">Study Materials</p>
+              <p className="text-2xl font-bold text-foreground">{materialsCount}</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="rounded-xl border bg-card p-4">
+              <h2 className="text-sm font-semibold text-foreground mb-2">Approval Pipeline</h2>
+              <div className="space-y-2 text-sm">
+                <p>Pending: <span className="font-semibold">{schoolOverview?.pending_subscription_requests ?? 0}</span></p>
+                <p>Approved: <span className="font-semibold">{schoolOverview?.approved_subscription_requests ?? 0}</span></p>
+                <p>Rejected: <span className="font-semibold">{schoolOverview?.rejected_subscription_requests ?? 0}</span></p>
+              </div>
+            </div>
+            <div className="rounded-xl border bg-card p-4">
+              <h2 className="text-sm font-semibold text-foreground mb-2">Recent Onboarding</h2>
+              {schoolOverview?.recent_users?.length ? (
+                <div className="space-y-2">
+                  {schoolOverview.recent_users.map((item) => (
+                    <div key={item.user_id} className="rounded-md border p-2">
+                      <p className="text-sm font-medium text-foreground">{item.full_name || item.email}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {item.email} | {item.role.replace("_", " ")} | {new Date(item.created_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No recent onboarding records found.</p>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            <Link to="/school-admin"><Button>Open Approval Queue</Button></Link>
+            <Link to="/onboarding"><Button variant="outline">Onboard Users</Button></Link>
+            <Link to="/materials"><Button variant="outline">Manage Materials</Button></Link>
+          </div>
         </div>
       </AppLayout>
     );
   }
 
   if (user?.role === "teacher") {
+    const totalStudents = teacherRoster?.student_count ?? 0;
+    const studentsWithParentLinked = teacherRoster?.students?.filter((item) => (item.parents?.length || 0) > 0).length ?? 0;
+    const studentsWithoutParentLinked = Math.max(totalStudents - studentsWithParentLinked, 0);
+    const parentLinkCoverage = totalStudents > 0
+      ? Math.round((studentsWithParentLinked / totalStudents) * 100)
+      : 0;
+
     return (
       <AppLayout>
-        <div className="max-w-4xl mx-auto px-4 md:px-8 py-8 md:py-12">
-          <h1 className="text-3xl font-bold text-foreground mb-2">Teacher Workspace</h1>
-          <p className="text-muted-foreground mb-6">Create AI resources and publish study materials for your students.</p>
-          <div className="flex gap-3">
-            <Link to="/ai-tools"><Button>Open AI Tools</Button></Link>
+        <div className="max-w-5xl mx-auto px-4 md:px-8 py-8 md:py-12 space-y-6">
+          <div>
+            <h1 className="text-3xl font-bold text-foreground mb-2">Teacher Workspace</h1>
+            <p className="text-muted-foreground">Track class health, identify follow-ups, and take quick action.</p>
+          </div>
+
+          {teacherRosterLoading ? (
+            <div className="rounded-xl border bg-card p-4">
+              <p className="text-sm text-muted-foreground">Loading class insights...</p>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div className="rounded-xl border bg-card p-4">
+                  <p className="text-xs text-muted-foreground">Class</p>
+                  <p className="text-2xl font-bold text-foreground">{teacherRoster?.class_grade ?? user?.grade ?? 10}</p>
+                </div>
+                <div className="rounded-xl border bg-card p-4">
+                  <p className="text-xs text-muted-foreground">Students</p>
+                  <p className="text-2xl font-bold text-foreground">{totalStudents}</p>
+                </div>
+                <div className="rounded-xl border bg-card p-4">
+                  <p className="text-xs text-muted-foreground">Parent Link Coverage</p>
+                  <p className="text-2xl font-bold text-foreground">{parentLinkCoverage}%</p>
+                  <p className="text-xs text-muted-foreground mt-1">{studentsWithParentLinked} linked</p>
+                </div>
+                <div className="rounded-xl border bg-card p-4">
+                  <p className="text-xs text-muted-foreground">Need Parent Link</p>
+                  <p className="text-2xl font-bold text-foreground">{studentsWithoutParentLinked}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="rounded-xl border bg-card p-4">
+                  <h2 className="text-sm font-semibold text-foreground">Students Needing Follow-up</h2>
+                  <p className="text-xs text-muted-foreground mb-3">Students with no parent contact linked yet.</p>
+                  {studentsWithoutParentLinked === 0 ? (
+                    <p className="text-sm text-muted-foreground">All students have at least one parent contact linked.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {(teacherRoster?.students || [])
+                        .filter((item) => (item.parents?.length || 0) === 0)
+                        .slice(0, 6)
+                        .map((student) => (
+                          <div key={student.student_user_id} className="rounded-lg border p-2">
+                            <p className="text-sm font-medium text-foreground">{student.full_name || "Student"}</p>
+                            <p className="text-xs text-muted-foreground">{student.email}</p>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-xl border bg-card p-4">
+                  <h2 className="text-sm font-semibold text-foreground">Recent Teacher Activity</h2>
+                  <p className="text-xs text-muted-foreground mb-3">Latest AI tools usage from your account.</p>
+                  {teacherHistory.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No recent activity yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {teacherHistory.map((item, idx) => (
+                        <div key={`${item.created_at}-${idx}`} className="rounded-lg border p-2">
+                          <p className="text-sm font-medium text-foreground">{item.tool_name}</p>
+                          <p className="text-xs text-muted-foreground">{item.topic}</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {new Date(item.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+
+          <div className="flex flex-wrap gap-3">
+            <Link to="/onboarding"><Button>Class Roster & Progress</Button></Link>
+            <Link to="/ai-tools"><Button variant="outline">Open AI Tools</Button></Link>
             <Link to="/materials"><Button variant="outline">Manage Materials</Button></Link>
+            <Link to="/history"><Button variant="outline">View Full History</Button></Link>
           </div>
         </div>
       </AppLayout>

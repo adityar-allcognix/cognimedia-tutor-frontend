@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { AppLayout } from "@/components/AppLayout";
-import { getTeacherClassRoster, onboardUser, onboardUsersBulk, onboardUsersBulkFile } from "@/lib/api";
+import {
+  getTeacherClassRoster,
+  getTeacherStudentProgress,
+  onboardUser,
+  onboardUsersBulk,
+  onboardUsersBulkFile,
+  type TeacherClassRoster,
+  type TeacherStudentProgress,
+} from "@/lib/api";
 import { getUser } from "@/lib/user";
 
 type OnboardRole = "teacher" | "student" | "parent";
@@ -25,11 +33,19 @@ export default function OnboardingPage() {
   const [bulkFile, setBulkFile] = useState<File | null>(null);
   const [rosterLoading, setRosterLoading] = useState(false);
   const [rosterError, setRosterError] = useState<string | null>(null);
-  const [roster, setRoster] = useState<any | null>(null);
+  const [roster, setRoster] = useState<TeacherClassRoster | null>(null);
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+  const [studentProgress, setStudentProgress] = useState<TeacherStudentProgress | null>(null);
+  const [studentProgressLoading, setStudentProgressLoading] = useState(false);
+  const [studentProgressError, setStudentProgressError] = useState<string | null>(null);
 
   const availableRoles = useMemo(
     () => (isAdmin ? ["teacher", "student", "parent"] : ["student", "parent"]),
     [isAdmin]
+  );
+  const selectedRosterStudent = useMemo(
+    () => roster?.students.find((item) => item.student_user_id === selectedStudentId) || null,
+    [roster, selectedStudentId]
   );
 
   const onSubmit = async (e: React.FormEvent) => {
@@ -137,10 +153,34 @@ export default function OnboardingPage() {
     try {
       const data = await getTeacherClassRoster();
       setRoster(data);
+      if (data.students.length === 0) {
+        setSelectedStudentId(null);
+        setStudentProgress(null);
+        return;
+      }
+      const selectedStillVisible = data.students.some((item) => item.student_user_id === selectedStudentId);
+      const targetStudentId = selectedStillVisible ? selectedStudentId : data.students[0].student_user_id;
+      await loadStudentProgress(targetStudentId);
     } catch (err: any) {
       setRosterError(err?.response?.data?.detail || "Failed to load class roster");
     } finally {
       setRosterLoading(false);
+    }
+  };
+
+  const loadStudentProgress = async (studentUserId: string | null) => {
+    if (!studentUserId) return;
+    setSelectedStudentId(studentUserId);
+    setStudentProgressLoading(true);
+    setStudentProgressError(null);
+    try {
+      const data = await getTeacherStudentProgress(studentUserId);
+      setStudentProgress(data);
+    } catch (err: any) {
+      setStudentProgress(null);
+      setStudentProgressError(err?.response?.data?.detail || "Failed to load student progress");
+    } finally {
+      setStudentProgressLoading(false);
     }
   };
 
@@ -158,7 +198,7 @@ export default function OnboardingPage() {
           </p>
         </div>
 
-        <form onSubmit={onSubmit} className="rounded-xl border bg-card p-4 space-y-3">
+        {/* <form onSubmit={onSubmit} className="rounded-xl border bg-card p-4 space-y-3">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <input
               className="w-full rounded-md border px-3 py-2"
@@ -226,7 +266,7 @@ export default function OnboardingPage() {
           >
             {loading ? "Creating..." : "Create User"}
           </button>
-        </form>
+        </form> */}
 
         {created ? (
           <div className="rounded-xl border bg-card p-4 space-y-2">
@@ -245,32 +285,6 @@ export default function OnboardingPage() {
           </div>
         ) : null}
 
-        <form onSubmit={onBulkSubmit} className="rounded-xl border bg-card p-4 space-y-3">
-          <div>
-            <h2 className="font-semibold text-foreground">Bulk Onboarding (CSV)</h2>
-            <p className="text-xs text-muted-foreground">
-              Format per line: email,full_name,role,grade,student_email
-            </p>
-            <p className="text-xs text-muted-foreground">
-              For teacher: grade/student_email can be blank. For student: add grade. For parent: add student_email.
-            </p>
-          </div>
-          <textarea
-            className="w-full rounded-md border px-3 py-2 font-mono text-sm"
-            rows={8}
-            placeholder="student1@avm.edu,Student One,student,10,\nparent1@avm.edu,Parent One,parent,,student1@avm.edu"
-            value={bulkCsv}
-            onChange={(e) => setBulkCsv(e.target.value)}
-          />
-          {bulkError ? <p className="text-sm text-destructive">{bulkError}</p> : null}
-          <button
-            className="px-4 py-2 rounded-md bg-primary text-primary-foreground disabled:opacity-60"
-            type="submit"
-            disabled={bulkLoading}
-          >
-            {bulkLoading ? "Creating..." : "Create Bulk Users"}
-          </button>
-        </form>
 
         <form onSubmit={onBulkFileSubmit} className="rounded-xl border bg-card p-4 space-y-3">
           <div>
@@ -332,8 +346,17 @@ export default function OnboardingPage() {
         ) : null}
 
         {user?.role === "teacher" ? (
-          <div className="rounded-xl border bg-card p-4 space-y-3">
-            <h2 className="font-semibold text-foreground">My Class Students & Parent Contacts</h2>
+          <div className="rounded-xl border bg-card p-4 space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="font-semibold text-foreground">My Class Students</h2>
+              <button
+                type="button"
+                onClick={loadTeacherRoster}
+                className="text-xs px-2 py-1 rounded-md border text-muted-foreground hover:text-foreground hover:bg-muted"
+              >
+                Refresh
+              </button>
+            </div>
             {rosterLoading ? (
               <p className="text-sm text-muted-foreground">Loading class roster...</p>
             ) : rosterError ? (
@@ -341,27 +364,88 @@ export default function OnboardingPage() {
             ) : !roster || !roster.students || roster.students.length === 0 ? (
               <p className="text-sm text-muted-foreground">No students found for your class yet.</p>
             ) : (
-              <div className="space-y-3">
-                <p className="text-xs text-muted-foreground">Class {roster.class_grade}</p>
-                {roster.students.map((student: any) => (
-                  <div key={student.student_user_id} className="rounded-lg border p-3">
-                    <p className="text-sm font-semibold text-foreground">
-                      {student.full_name || "Student"} ({student.email})
-                    </p>
-                    <p className="text-xs text-muted-foreground">Class {student.grade}</p>
-                    {student.parents?.length ? (
-                      <div className="mt-2 space-y-1">
-                        {student.parents.map((parent: any) => (
-                          <p key={parent.parent_user_id} className="text-xs text-muted-foreground">
-                            Parent: {parent.full_name || "Parent"} ({parent.email})
-                          </p>
-                        ))}
-                      </div>
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Class {roster.class_grade} | {roster.student_count} student{roster.student_count === 1 ? "" : "s"}
+                </p>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                    {roster.students.map((student) => (
+                      <button
+                        type="button"
+                        key={student.student_user_id}
+                        onClick={() => loadStudentProgress(student.student_user_id)}
+                        className={`w-full text-left rounded-lg border p-3 transition-colors ${
+                          selectedStudentId === student.student_user_id
+                            ? "border-primary bg-primary/5"
+                            : "hover:bg-muted"
+                        }`}
+                      >
+                        <p className="text-sm font-semibold text-foreground">{student.full_name || "Student"}</p>
+                        <p className="text-xs text-muted-foreground">{student.email}</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {student.parents?.length || 0} parent contact{(student.parents?.length || 0) === 1 ? "" : "s"}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="rounded-lg border p-4 bg-muted/20">
+                    {studentProgressLoading ? (
+                      <p className="text-sm text-muted-foreground">Loading student progress...</p>
+                    ) : studentProgressError ? (
+                      <p className="text-sm text-destructive">{studentProgressError}</p>
+                    ) : !studentProgress ? (
+                      <p className="text-sm text-muted-foreground">Select a student to view progress.</p>
                     ) : (
-                      <p className="text-xs text-muted-foreground mt-2">No parent linked yet.</p>
+                      <div className="space-y-3">
+                        <div>
+                          <p className="text-base font-semibold text-foreground">
+                            {studentProgress.full_name || "Student"}
+                          </p>
+                          <p className="text-xs text-muted-foreground">{studentProgress.email}</p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-sm">
+                          <div className="rounded-md border bg-card p-2">
+                            <p className="text-xs text-muted-foreground">Learning streak</p>
+                            <p className="font-semibold">{studentProgress.learning_streak} days</p>
+                          </div>
+                          <div className="rounded-md border bg-card p-2">
+                            <p className="text-xs text-muted-foreground">Total points</p>
+                            <p className="font-semibold">{studentProgress.total_points}</p>
+                          </div>
+                          <div className="rounded-md border bg-card p-2">
+                            <p className="text-xs text-muted-foreground">Completed chapters</p>
+                            <p className="font-semibold">{studentProgress.completed_chapters}</p>
+                          </div>
+                          <div className="rounded-md border bg-card p-2">
+                            <p className="text-xs text-muted-foreground">Topics practiced</p>
+                            <p className="font-semibold">{studentProgress.topics_practiced}</p>
+                          </div>
+                        </div>
+                        <div className="rounded-md border bg-card p-2">
+                          <p className="text-xs text-muted-foreground">Average mastery</p>
+                          <p className="font-semibold">
+                            {Math.round((studentProgress.avg_mastery || 0) * 100)}%
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-1">Parent contacts</p>
+                          {selectedRosterStudent?.parents?.length ? (
+                            <div className="space-y-1">
+                              {selectedRosterStudent.parents.map((parent) => (
+                                <p key={parent.parent_user_id} className="text-xs text-muted-foreground">
+                                  {parent.full_name || "Parent"} ({parent.email})
+                                </p>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">No parent linked yet.</p>
+                          )}
+                        </div>
+                      </div>
                     )}
                   </div>
-                ))}
+                </div>
               </div>
             )}
           </div>

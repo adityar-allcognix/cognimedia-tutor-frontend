@@ -37,9 +37,12 @@ export default function SchoolAdminPage() {
     }
   };
 
+  const studentRequests = items.filter((item) => item.target_role === "student").length;
+  const teacherRequests = items.filter((item) => item.target_role === "teacher").length;
+
   return (
     <AppLayout>
-      <div className="max-w-5xl mx-auto px-4 md:px-8 py-8 md:py-12">
+      <div className="max-w-5xl mx-auto px-4 md:px-8 py-8 md:py-12 space-y-6">
         <h1 className="text-3xl font-bold text-foreground mb-2">School Subscription Approvals</h1>
         <p className="text-muted-foreground mb-8">Approve student and teacher requests covered in school annual fees.</p>
 
@@ -51,12 +54,31 @@ export default function SchoolAdminPage() {
           <p className="text-muted-foreground">No pending requests.</p>
         ) : (
           <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="rounded-xl border bg-card p-4">
+                <p className="text-xs text-muted-foreground">Pending Requests</p>
+                <p className="text-2xl font-bold text-foreground">{items.length}</p>
+              </div>
+              <div className="rounded-xl border bg-card p-4">
+                <p className="text-xs text-muted-foreground">Student Requests</p>
+                <p className="text-2xl font-bold text-foreground">{studentRequests}</p>
+              </div>
+              <div className="rounded-xl border bg-card p-4">
+                <p className="text-xs text-muted-foreground">Teacher Requests</p>
+                <p className="text-2xl font-bold text-foreground">{teacherRequests}</p>
+              </div>
+            </div>
+
             {items.map((item) => (
               <div key={item.id} className="rounded-xl border bg-card p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <p className="font-semibold text-foreground">{item.target_user_email}</p>
+                    <p className="text-xs text-muted-foreground">Requested by: {item.requested_by_email}</p>
                     <p className="text-sm text-muted-foreground">Role: {item.target_role.replace("_", " ")}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Requested on: {new Date(item.created_at).toLocaleDateString()}
+                    </p>
                     {item.note ? <p className="text-sm mt-1 text-muted-foreground">Note: {item.note}</p> : null}
                   </div>
                   <div className="flex gap-2">
